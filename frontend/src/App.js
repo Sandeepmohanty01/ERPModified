@@ -15,6 +15,7 @@ import Roles from '@/pages/Roles';
 import StockLedger from '@/pages/StockLedger';
 import StockAdjustment from '@/pages/StockAdjustment';
 import Layout from '@/components/Layout';
+import offlineSyncService from '@/lib/offlineSync';
 import '@/App.css';
 
 function App() {
@@ -28,10 +29,25 @@ function App() {
       setUser(JSON.parse(storedUser));
     }
     setLoading(false);
+    
+    // Initialize offline sync service
+    offlineSyncService.init().then(() => {
+      console.log('[App] Offline sync service initialized');
+      // Trigger initial sync if online
+      if (navigator.onLine && token) {
+        offlineSyncService.sync();
+      }
+    }).catch(err => {
+      console.error('[App] Failed to initialize offline sync:', err);
+    });
   }, []);
 
   const handleLogin = (userData) => {
     setUser(userData);
+    // Sync data after login
+    setTimeout(() => {
+      offlineSyncService.sync();
+    }, 1000);
   };
 
   const handleLogout = () => {
