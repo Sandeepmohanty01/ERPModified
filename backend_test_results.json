@@ -1,0 +1,37 @@
+{
+  "total_tests": 5,
+  "passed_tests": 5,
+  "success_rate": 100.0,
+  "results": [
+    {
+      "test": "Health API",
+      "success": true,
+      "details": "Status: healthy, Version: 2.0.0",
+      "timestamp": "2026-01-24T14:14:21.246647"
+    },
+    {
+      "test": "Auth Login",
+      "success": true,
+      "details": "Token received, user: admin@jewellery.com",
+      "timestamp": "2026-01-24T14:14:21.511449"
+    },
+    {
+      "test": "Sync Status",
+      "success": true,
+      "details": "Status: online, Collections: 8",
+      "timestamp": "2026-01-24T14:14:21.554435"
+    },
+    {
+      "test": "Sync Pull",
+      "success": true,
+      "details": "Success: True, Total changes: 4",
+      "timestamp": "2026-01-24T14:14:21.594628"
+    },
+    {
+      "test": "Sync Push",
+      "success": true,
+      "details": "Synced: 1, Conflicts: 0, Errors: 0",
+      "timestamp": "2026-01-24T14:14:21.649980"
+    }
+  ]
+}
