@@ -17,6 +17,7 @@ from services.stock.routes import router as stock_router
 from services.transactions.routes import router as transactions_router
 from services.accounts.routes import router as accounts_router
 from services.customers.routes import router as customers_router
+from services.sync.routes import router as sync_router
 from shared.database import close_database
 
 # Create FastAPI app
@@ -43,6 +44,7 @@ app.include_router(stock_router)
 app.include_router(transactions_router)
 app.include_router(accounts_router)
 app.include_router(customers_router)
+app.include_router(sync_router)
 
 # Configure logging
 logging.basicConfig(
