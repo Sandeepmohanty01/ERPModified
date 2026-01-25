@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from shared.database import get_database
-from shared.auth import hash_password, verify_password, create_access_token, get_current_user
-from shared.models import User, UserCreate, UserLogin, UserResponse
+from backend.shared.database import get_database
+from backend.shared.auth import hash_password, verify_password, create_access_token, get_current_user
+from backend.shared.models import User, UserCreate, UserLogin, UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 db = get_database()

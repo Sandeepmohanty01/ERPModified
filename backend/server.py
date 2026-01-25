@@ -1,24 +1,18 @@
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
-import os
+from backend.config import settings
 import logging
-from pathlib import Path
-from dotenv import load_dotenv
-
-# Load environment variables
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
 
 # Import routers from services
-from services.auth.routes import router as auth_router
-from services.users.routes import router as users_router
-from services.inventory.routes import router as inventory_router
-from services.stock.routes import router as stock_router
-from services.transactions.routes import router as transactions_router
-from services.accounts.routes import router as accounts_router
-from services.customers.routes import router as customers_router
-from services.sync.routes import router as sync_router
-from shared.database import close_database
+from backend.services.auth.routes import router as auth_router
+from backend.services.users.routes import router as users_router
+from backend.services.inventory.routes import router as inventory_router
+from backend.services.stock.routes import router as stock_router
+from backend.services.transactions.routes import router as transactions_router
+from backend.services.accounts.routes import router as accounts_router
+from backend.services.customers.routes import router as customers_router
+from backend.services.sync.routes import router as sync_router
+from backend.shared.database import close_database
 
 # Create FastAPI app
 app = FastAPI(
@@ -31,7 +25,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=settings.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

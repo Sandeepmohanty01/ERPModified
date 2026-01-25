@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from datetime import datetime
-from shared.database import get_database
-from shared.auth import get_current_user
-from shared.models import Customer, CustomerCreate, Seller, SellerCreate
+from backend.shared.database import get_database
+from backend.shared.auth import get_current_user
+from backend.shared.models import Customer, CustomerCreate, Seller, SellerCreate
 
 router = APIRouter(prefix="/api", tags=["Customers & Sellers"])
 db = get_database()

@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from datetime import datetime, timezone
 import uuid
-from shared.database import get_database
-from shared.auth import get_current_user
-from shared.models import (
+from backend.shared.database import get_database
+from backend.shared.auth import get_current_user
+from backend.shared.models import (
     Transaction, TransactionCreate,
     Invoice, InvoiceCreate, InvoiceItem,
     Payment, PaymentCreate

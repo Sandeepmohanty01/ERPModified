@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from datetime import datetime
-from shared.database import get_database
-from shared.auth import get_current_user, hash_password
-from shared.models import Role, RoleCreate, UserResponse
+from backend.shared.database import get_database
+from backend.shared.auth import get_current_user, hash_password
+from backend.shared.models import Role, RoleCreate, UserResponse
 
 router = APIRouter(prefix="/api", tags=["Users & Roles"])
 db = get_database()

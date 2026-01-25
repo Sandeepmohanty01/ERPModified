@@ -3,8 +3,8 @@ from typing import List, Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel
 import uuid
-from shared.database import get_database
-from shared.auth import get_current_user
+from backend.shared.database import get_database
+from backend.shared.auth import get_current_user
 
 router = APIRouter(prefix="/api/sync", tags=["Offline Sync"])
 db = get_database()

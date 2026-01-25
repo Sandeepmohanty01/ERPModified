@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 class JewelleryERPTester:
-    def __init__(self, base_url="https://modern-erp-6.preview.emergentagent.com"):
+    def __init__(self, base_url="http://127.0.0.1:8000"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0
@@ -263,7 +263,7 @@ def main():
     
     # Save detailed results
     results = tester.get_test_results()
-    with open('/app/backend_test_results.json', 'w') as f:
+    with open('backend_test_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     
     return exit_code

@@ -5,9 +5,9 @@ import uuid
 import qrcode
 from io import BytesIO
 import base64
-from shared.database import get_database
-from shared.auth import get_current_user
-from shared.models import Category, CategoryCreate, JewelleryItem, JewelleryItemCreate
+from backend.shared.database import get_database
+from backend.shared.auth import get_current_user
+from backend.shared.models import Category, CategoryCreate, JewelleryItem, JewelleryItemCreate
 
 router = APIRouter(prefix="/api", tags=["Inventory"])
 db = get_database()
