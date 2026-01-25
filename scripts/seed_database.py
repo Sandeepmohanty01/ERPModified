@@ -6,22 +6,23 @@ Creates default roles and admin user for initial setup
 
 import asyncio
 import sys
-sys.path.insert(0, '/app/backend')
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from passlib.context import CryptContext
+import bcrypt
 import uuid
 from datetime import datetime, timezone
-import os
-from dotenv import load_dotenv
 
-load_dotenv('/app/backend/.env')
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Import settings from backend config
+from backend.config import settings
 
 async def seed_database():
-    mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-    db_name = os.environ.get('DB_NAME', 'test_database')
+    mongo_url = settings.MONGO_URL
+    db_name = settings.DB_NAME
     
     print(f"Connecting to {mongo_url}/{db_name}...")
     client = AsyncIOMotorClient(mongo_url)
@@ -63,7 +64,7 @@ async def seed_database():
         print("✓ Admin user already exists")
     else:
         # Create Admin user
-        hashed_password = pwd_context.hash("admin123")
+        hashed_password = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         admin_user = {
             "id": str(uuid.uuid4()),
             "email": "admin@jewellery.com",
