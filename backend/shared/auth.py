@@ -11,10 +11,18 @@ ALGORITHM = settings.ALGORITHM
 security = HTTPBearer()
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # Bcrypt has a 72-byte limit, truncate password to 72 characters
+    # (since most characters are 1 byte in UTF-8, this is a safe approximation)
+    truncated_password = password[:72]
+    return pwd_context.hash(truncated_password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    # Bcrypt has a 72-byte limit, truncate password to 72 characters
+    # (since most characters are 1 byte in UTF-8, this is a safe approximation)
+
+    truncated_password = plain_password[:72]
+    return pwd_context.verify(truncated_password, hashed_password)
+    
 
 def create_access_token(data: dict, expires_delta: timedelta = timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)):
     to_encode = data.copy()
@@ -24,7 +32,7 @@ def create_access_token(data: dict, expires_delta: timedelta = timedelta(days=se
     return encoded_jwt
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    from shared.database import get_database
+    from backend.shared.database import get_database
     db = get_database()
     try:
         token = credentials.credentials

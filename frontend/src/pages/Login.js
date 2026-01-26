@@ -76,12 +76,6 @@ const Login = ({ onLogin }) => {
               {loading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
-
-          <div className="mt-6 p-4 bg-[#f0fdf4] rounded-sm border border-[#86efac]">
-            <p className="text-xs text-[#14532d] font-medium mb-2">Demo Credentials:</p>
-            <p className="text-xs text-[#14532d]">Email: admin@jewellery.com</p>
-            <p className="text-xs text-[#14532d]">Password: admin123</p>
-          </div>
         </div>
       </div>
     </div>
