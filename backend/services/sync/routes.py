@@ -43,6 +43,58 @@ SYNCABLE_COLLECTIONS = {
     "stock_adjustments": db.stock_adjustments
 }
 
+# ========== HELPER FUNCTIONS ==========
+
+async def create_stock_ledger_entry(item_data, transaction_type, reference_type, quantity_in=0, quantity_out=0, 
+                                     weight_in=0.0, weight_out=0.0, unit_cost=0.0, reference_id=None, 
+                                     notes=None, created_by=None):
+    """Create a stock ledger entry for inventory tracking"""
+    # Get running totals
+    last_entry = await db.stock_ledger.find_one(
+        {"item_id": item_data["id"]},
+        {"_id": 0},
+        sort=[("created_at", -1)]
+    )
+    
+    if last_entry:
+        running_quantity = last_entry["running_quantity"] + quantity_in - quantity_out
+        running_weight = last_entry["running_weight"] + weight_in - weight_out
+        running_value = last_entry["running_value"] + (quantity_in * unit_cost) - (quantity_out * unit_cost)
+    else:
+        running_quantity = quantity_in - quantity_out
+        running_weight = weight_in - weight_out
+        running_value = (quantity_in * unit_cost) - (quantity_out * unit_cost)
+    
+    total_value = (quantity_in * unit_cost) if quantity_in > 0 else (quantity_out * unit_cost)
+    
+    ledger_entry = {
+        "id": str(uuid.uuid4()),
+        "item_id": item_data["id"],
+        "item_name": item_data["name"],
+        "design_code": item_data["design_code"],
+        "metal_type": item_data["metal_type"],
+        "purity": item_data["purity"],
+        "transaction_type": transaction_type,
+        "reference_type": reference_type,
+        "reference_id": reference_id,
+        "quantity_in": quantity_in,
+        "quantity_out": quantity_out,
+        "weight_in": weight_in,
+        "weight_out": weight_out,
+        "unit_cost": unit_cost,
+        "total_value": total_value,
+        "running_quantity": running_quantity,
+        "running_weight": running_weight,
+        "running_value": running_value,
+        "valuation_method": "weighted_average",
+        "notes": notes,
+        "created_by": created_by,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.stock_ledger.insert_one(ledger_entry)
+    return ledger_entry
+
 # ========== SYNC ROUTES ==========
 
 @router.post("/push")
@@ -54,7 +106,9 @@ async def push_changes(sync_request: SyncRequest, current_user: dict = Depends(g
         "errors": []
     }
     
+    print(f"[Sync] Received {len(sync_request.items)} items to sync")
     for item in sync_request.items:
+        print(f"[Sync] Item: collection={item.collection}, action={item.action}, doc_id={item.document_id}")
         if item.collection not in SYNCABLE_COLLECTIONS:
             results["errors"].append({
                 "document_id": item.document_id,
@@ -93,11 +147,32 @@ async def push_changes(sync_request: SyncRequest, current_user: dict = Depends(g
                         })
                 else:
                     # New document - insert
+                    # If ID is a temp ID, generate a real UUID
+                    real_id = item.document_id
+                    if item.document_id.startswith('temp_'):
+                        real_id = str(uuid.uuid4())
+                        print(f"[Sync] Replacing temp ID {item.document_id} with real ID {real_id}")
+                        item.data["id"] = real_id
+                    
                     item.data["synced_at"] = datetime.now(timezone.utc).isoformat()
                     item.data["created_at"] = item.data.get("created_at", datetime.now(timezone.utc).isoformat())
                     await collection.insert_one(item.data)
+                    
+                    # Create stock ledger entry for items collection
+                    if item.collection == "items":
+                        await create_stock_ledger_entry(
+                            item_data=item.data,
+                            transaction_type="opening",
+                            reference_type="opening_stock",
+                            quantity_in=item.data.get("quantity", 0),
+                            weight_in=item.data.get("weight", 0) * item.data.get("quantity", 0),
+                            unit_cost=item.data.get("selling_price", 0),
+                            created_by=current_user["id"]
+                        )
+                    
                     results["synced"].append({
-                        "document_id": item.document_id,
+                        "document_id": item.document_id,  # Return original temp ID so frontend can match it
+                        "real_id": real_id,  # Also return real ID for frontend to update
                         "collection": item.collection,
                         "action": "create"
                     })

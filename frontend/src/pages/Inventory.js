@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, QrCode } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, QrCode, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -15,10 +16,14 @@ const Inventory = () => {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedQRCode, setSelectedQRCode] = useState(null);
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline, deleteOffline } = useOfflineSync();
   const [formData, setFormData] = useState({
     name: '',
     category_id: '',
@@ -68,6 +73,8 @@ const Inventory = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       const token = localStorage.getItem('token');
       const payload = {
@@ -81,34 +88,78 @@ const Inventory = () => {
       };
 
       if (editingItem) {
-        await axios.put(`${API}/items/${editingItem.id}`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Item updated successfully');
+        // Update operation
+        payload.id = editingItem.id;
+
+        if (isOnline) {
+          // Online: make API call
+          await axios.put(`${API}/items/${editingItem.id}`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Item updated successfully');
+        } else {
+          // Offline: save locally and queue for sync
+          await saveOffline('items', payload, true);
+          toast.success('Item updated offline, will sync when online');
+        }
+
+        // Update local state
+        setItems(items.map(item => item.id === editingItem.id ? { ...item, ...payload } : item));
       } else {
-        await axios.post(`${API}/items`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Item created successfully');
+        // Create operation
+        const newItem = {
+          ...payload,
+          id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          qr_code: `QR_${Date.now()}`,
+          qr_code_image: '',
+          status: 'available',
+          created_at: new Date().toISOString()
+        };
+
+        if (isOnline) {
+          // Online: make API call
+          const response = await axios.post(`${API}/items`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Item created successfully');
+          setItems([response.data, ...items]);
+        } else {
+          // Offline: save locally and queue for sync
+          await saveOffline('items', newItem, true);
+          toast.success('Item saved offline, will sync when online');
+          setItems([newItem, ...items]);
+        }
       }
 
       setDialogOpen(false);
       resetForm();
-      fetchItems();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this item?')) return;
+
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API}/items/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Item deleted successfully');
-      fetchItems();
+
+      if (isOnline) {
+        // Online: make API call
+        await axios.delete(`${API}/items/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Item deleted successfully');
+      } else {
+        // Offline: mark for deletion and queue for sync
+        await deleteOffline('items', id, true);
+        toast.success('Item deleted offline, will sync when online');
+      }
+
+      // Update local state
+      setItems(items.filter(item => item.id !== id));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Delete failed');
     }
@@ -163,7 +214,25 @@ const Inventory = () => {
     <div className="p-4 lg:p-8" data-testid="inventory-container">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl lg:text-4xl font-serif font-bold text-[#022c22] mb-1" data-testid="inventory-title">Inventory</h1>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-2xl lg:text-4xl font-serif font-bold text-[#022c22]" data-testid="inventory-title">Inventory</h1>
+            {isOnline ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+                <WifiOff size={12} />
+                <span>Offline</span>
+              </div>
+            )}
+            {pendingChanges > 0 && (
+              <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                {pendingChanges} pending sync
+              </div>
+            )}
+          </div>
           <p className="text-sm lg:text-base text-stone-500">Manage your jewellery items</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -348,10 +417,11 @@ const Inventory = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   data-testid="save-item-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] text-sm"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingItem ? 'Update' : 'Create'}
+                  {isSubmitting ? 'Saving...' : (editingItem ? 'Update' : 'Create')}
                 </Button>
                 <Button
                   type="button"
@@ -414,9 +484,8 @@ const Inventory = () => {
                       <td className="py-2.5 px-3 lg:px-4 text-xs lg:text-sm">₹{item.selling_price?.toLocaleString()}</td>
                       <td className="py-2.5 px-3 lg:px-4">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            item.quantity <= 2 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                          }`}
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.quantity <= 2 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}
                         >
                           {item.quantity}
                         </span>
@@ -468,9 +537,9 @@ const Inventory = () => {
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="bg-white p-4 rounded-lg border border-stone-200 shadow-sm">
                 {selectedQRCode.qr_code_image ? (
-                  <img 
-                    src={selectedQRCode.qr_code_image} 
-                    alt={`QR Code for ${selectedQRCode.design_code}`} 
+                  <img
+                    src={selectedQRCode.qr_code_image}
+                    alt={`QR Code for ${selectedQRCode.design_code}`}
                     className="w-48 h-48 object-contain"
                     data-testid="qr-code-image"
                   />

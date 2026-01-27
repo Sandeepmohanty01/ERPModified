@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Phone, Mail } from 'lucide-react';
+import { Plus, Edit, Trash2, Phone, Mail, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -13,8 +14,12 @@ const API = `${BACKEND_URL}/api`;
 const Sellers = () => {
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSeller, setEditingSeller] = useState(null);
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline, deleteOffline } = useOfflineSync();
   const [formData, setFormData] = useState({
     name: '',
     contact: '',
@@ -42,6 +47,8 @@ const Sellers = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       const token = localStorage.getItem('token');
       const payload = {
@@ -51,34 +58,65 @@ const Sellers = () => {
       };
 
       if (editingSeller) {
-        await axios.put(`${API}/sellers/${editingSeller.id}`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Seller updated successfully');
+        payload.id = editingSeller.id;
+
+        if (isOnline) {
+          await axios.put(`${API}/sellers/${editingSeller.id}`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Seller updated successfully');
+        } else {
+          await saveOffline('sellers', payload, true);
+          toast.success('Seller updated offline, will sync when online');
+        }
+
+        setSellers(sellers.map(s => s.id === editingSeller.id ? { ...s, ...payload } : s));
       } else {
-        await axios.post(`${API}/sellers`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Seller created successfully');
+        const newSeller = {
+          ...payload,
+          id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          created_at: new Date().toISOString()
+        };
+
+        if (isOnline) {
+          const response = await axios.post(`${API}/sellers`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Seller created successfully');
+          setSellers([response.data, ...sellers]);
+        } else {
+          await saveOffline('sellers', newSeller, true);
+          toast.success('Seller saved offline, will sync when online');
+          setSellers([newSeller, ...sellers]);
+        }
       }
 
       setDialogOpen(false);
       resetForm();
-      fetchSellers();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this seller?')) return;
+
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API}/sellers/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Seller deleted successfully');
-      fetchSellers();
+
+      if (isOnline) {
+        await axios.delete(`${API}/sellers/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Seller deleted successfully');
+      } else {
+        await deleteOffline('sellers', id, true);
+        toast.success('Seller deleted offline, will sync when online');
+      }
+
+      setSellers(sellers.filter(s => s.id !== id));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Delete failed');
     }
@@ -104,7 +142,25 @@ const Sellers = () => {
     <div className="p-8 md:p-12" data-testid="sellers-container">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-[#022c22] mb-2" data-testid="sellers-title">Sellers</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-serif font-bold text-[#022c22]" data-testid="sellers-title">Sellers</h1>
+            {isOnline ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+                <WifiOff size={12} />
+                <span>Offline</span>
+              </div>
+            )}
+            {pendingChanges > 0 && (
+              <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                {pendingChanges} pending sync
+              </div>
+            )}
+          </div>
           <p className="text-stone-500">Manage seller/vendor information</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -170,10 +226,11 @@ const Sellers = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   data-testid="save-seller-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b]"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingSeller ? 'Update' : 'Create'}
+                  {isSubmitting ? 'Saving...' : (editingSeller ? 'Update' : 'Create')}
                 </Button>
                 <Button
                   type="button"

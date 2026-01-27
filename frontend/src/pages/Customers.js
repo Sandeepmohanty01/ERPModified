@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Phone, Mail, MapPin } from 'lucide-react';
+import { Plus, Edit, Trash2, Phone, Mail, MapPin, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -13,8 +14,12 @@ const API = `${BACKEND_URL}/api`;
 const Customers = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline, deleteOffline } = useOfflineSync();
   const [formData, setFormData] = useState({
     name: '',
     contact: '',
@@ -43,6 +48,8 @@ const Customers = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       const token = localStorage.getItem('token');
       const payload = {
@@ -53,34 +60,67 @@ const Customers = () => {
       };
 
       if (editingCustomer) {
-        await axios.put(`${API}/customers/${editingCustomer.id}`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Customer updated successfully');
+        // Update operation
+        payload.id = editingCustomer.id;
+
+        if (isOnline) {
+          await axios.put(`${API}/customers/${editingCustomer.id}`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Customer updated successfully');
+        } else {
+          await saveOffline('customers', payload, true);
+          toast.success('Customer updated offline, will sync when online');
+        }
+
+        setCustomers(customers.map(c => c.id === editingCustomer.id ? { ...c, ...payload } : c));
       } else {
-        await axios.post(`${API}/customers`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Customer created successfully');
+        // Create operation
+        const newCustomer = {
+          ...payload,
+          id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          created_at: new Date().toISOString()
+        };
+
+        if (isOnline) {
+          const response = await axios.post(`${API}/customers`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Customer created successfully');
+          setCustomers([response.data, ...customers]);
+        } else {
+          await saveOffline('customers', newCustomer, true);
+          toast.success('Customer saved offline, will sync when online');
+          setCustomers([newCustomer, ...customers]);
+        }
       }
 
       setDialogOpen(false);
       resetForm();
-      fetchCustomers();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
+
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API}/customers/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Customer deleted successfully');
-      fetchCustomers();
+
+      if (isOnline) {
+        await axios.delete(`${API}/customers/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Customer deleted successfully');
+      } else {
+        await deleteOffline('customers', id, true);
+        toast.success('Customer deleted offline, will sync when online');
+      }
+
+      setCustomers(customers.filter(c => c.id !== id));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Delete failed');
     }
@@ -107,7 +147,25 @@ const Customers = () => {
     <div className="p-8 md:p-12" data-testid="customers-container">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-[#022c22] mb-2" data-testid="customers-title">Customers</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-serif font-bold text-[#022c22]" data-testid="customers-title">Customers</h1>
+            {isOnline ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+                <WifiOff size={12} />
+                <span>Offline</span>
+              </div>
+            )}
+            {pendingChanges > 0 && (
+              <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                {pendingChanges} pending sync
+              </div>
+            )}
+          </div>
           <p className="text-stone-500">Manage customer information</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -183,10 +241,11 @@ const Customers = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   data-testid="save-customer-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b]"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingCustomer ? 'Update' : 'Create'}
+                  {isSubmitting ? 'Saving...' : (editingCustomer ? 'Update' : 'Create')}
                 </Button>
                 <Button
                   type="button"

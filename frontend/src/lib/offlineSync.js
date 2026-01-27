@@ -14,7 +14,7 @@ const DB_VERSION = 1;
 // Collections that support offline sync
 const SYNCABLE_STORES = [
   'items',
-  'categories', 
+  'categories',
   'customers',
   'sellers',
   'invoices',
@@ -33,7 +33,7 @@ class OfflineSyncService {
     this.isOnline = navigator.onLine;
     this.syncInProgress = false;
     this.listeners = new Set();
-    
+
     // Listen for online/offline events
     window.addEventListener('online', () => this.handleOnline());
     window.addEventListener('offline', () => this.handleOffline());
@@ -45,7 +45,7 @@ class OfflineSyncService {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
-      
+
       request.onsuccess = () => {
         this.db = request.result;
         console.log('[OfflineSync] Database initialized');
@@ -54,7 +54,7 @@ class OfflineSyncService {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
-        
+
         // Create object stores for each syncable collection
         SYNCABLE_STORES.forEach(storeName => {
           if (!db.objectStoreNames.contains(storeName)) {
@@ -85,7 +85,7 @@ class OfflineSyncService {
 
     const transaction = this.db.transaction([collection], 'readwrite');
     const store = transaction.objectStore(collection);
-    
+
     const item = {
       ...data,
       local_modified: markForSync ? new Date().toISOString() : null,
@@ -96,7 +96,9 @@ class OfflineSyncService {
       const request = store.put(item);
       request.onsuccess = () => {
         if (markForSync) {
-          this.addToSyncQueue(collection, data.id, 'update', data);
+          // Determine action based on ID - temp IDs mean it's a new item
+          const action = data.id && data.id.toString().startsWith('temp_') ? 'create' : 'update';
+          this.addToSyncQueue(collection, data.id, action, data);
         }
         resolve(item);
       };
@@ -247,7 +249,7 @@ class OfflineSyncService {
     console.log('[OfflineSync] Back online');
     this.isOnline = true;
     this.notifyListeners('online');
-    
+
     // Auto-sync when coming back online
     await this.sync();
   }
@@ -282,10 +284,10 @@ class OfflineSyncService {
 
       // Step 1: Push local changes
       const pendingItems = await this.getPendingSyncItems();
-      
+
       if (pendingItems.length > 0) {
         console.log(`[OfflineSync] Pushing ${pendingItems.length} local changes`);
-        
+
         const syncItems = pendingItems.map(item => ({
           collection: item.collection,
           document_id: item.document_id,
@@ -307,15 +309,26 @@ class OfflineSyncService {
 
         if (pushResponse.ok) {
           const pushResult = await pushResponse.json();
-          
+          console.log('[OfflineSync] Push result:', pushResult);
+          console.log('[OfflineSync] Synced items:', pushResult.results?.synced);
+          console.log('[OfflineSync] Pending items to match:', pendingItems);
+
           // Clear synced items from queue
-          for (const synced of pushResult.results.synced) {
-            const queueItem = pendingItems.find(
-              p => p.document_id === synced.document_id && p.collection === synced.collection
-            );
-            if (queueItem) {
-              await this.clearSyncQueueItem(queueItem.queue_id);
+          if (pushResult.results && pushResult.results.synced) {
+            console.log(`[OfflineSync] Clearing ${pushResult.results.synced.length} synced items from queue`);
+            for (const synced of pushResult.results.synced) {
+              const queueItem = pendingItems.find(
+                p => p.document_id === synced.document_id && p.collection === synced.collection
+              );
+              if (queueItem) {
+                console.log('[OfflineSync] Clearing queue item:', queueItem.queue_id, 'for', synced.collection, synced.document_id);
+                await this.clearSyncQueueItem(queueItem.queue_id);
+              } else {
+                console.warn('[OfflineSync] Could not find queue item for synced:', synced);
+              }
             }
+          } else {
+            console.warn('[OfflineSync] No synced items in response or invalid structure');
           }
 
           // Handle conflicts - update local with server data
@@ -342,10 +355,10 @@ class OfflineSyncService {
       }
 
       const pullResponse = await fetch(pullUrl.toString(), { headers });
-      
+
       if (pullResponse.ok) {
         const pullResult = await pullResponse.json();
-        
+
         // Update local storage with server changes
         for (const [collection, documents] of Object.entries(pullResult.changes)) {
           for (const doc of documents) {
@@ -355,13 +368,13 @@ class OfflineSyncService {
 
         // Update last sync timestamp
         await this.setLastSyncTimestamp(pullResult.sync_timestamp);
-        
+
         console.log(`[OfflineSync] Pulled ${pullResult.total_changes} changes from server`);
       }
 
       this.syncInProgress = false;
       this.notifyListeners('sync_completed');
-      
+
       return { success: true };
 
     } catch (error) {
@@ -375,7 +388,7 @@ class OfflineSyncService {
   // Cache API response data locally
   async cacheResponse(collection, data) {
     if (!SYNCABLE_STORES.includes(collection)) return;
-    
+
     if (Array.isArray(data)) {
       for (const item of data) {
         if (item.id) {
@@ -420,7 +433,7 @@ class OfflineSyncService {
   async getStatus() {
     const pendingItems = await this.getPendingSyncItems();
     const lastSync = await this.getLastSyncTimestamp();
-    
+
     return {
       isOnline: this.isOnline,
       syncInProgress: this.syncInProgress,

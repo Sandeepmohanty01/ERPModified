@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -14,9 +15,13 @@ const API = `${BACKEND_URL}/api`;
 const Categories = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [formData, setFormData] = useState({ name: '', description: '' });
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline, deleteOffline } = useOfflineSync();
 
   useEffect(() => {
     fetchCategories();
@@ -38,36 +43,75 @@ const Categories = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       const token = localStorage.getItem('token');
+      const payload = {
+        ...formData,
+        description: formData.description || null
+      };
+
       if (editingCategory) {
-        await axios.put(`${API}/categories/${editingCategory.id}`, formData, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Category updated successfully');
+        payload.id = editingCategory.id;
+
+        if (isOnline) {
+          await axios.put(`${API}/categories/${editingCategory.id}`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Category updated successfully');
+        } else {
+          await saveOffline('categories', payload, true);
+          toast.success('Category updated offline, will sync when online');
+        }
+
+        setCategories(categories.map(c => c.id === editingCategory.id ? { ...c, ...payload } : c));
       } else {
-        await axios.post(`${API}/categories`, formData, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success('Category created successfully');
+        const newCategory = {
+          ...payload,
+          id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          created_at: new Date().toISOString()
+        };
+
+        if (isOnline) {
+          const response = await axios.post(`${API}/categories`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success('Category created successfully');
+          setCategories([response.data, ...categories]);
+        } else {
+          await saveOffline('categories', newCategory, true);
+          toast.success('Category saved offline, will sync when online');
+          setCategories([newCategory, ...categories]);
+        }
       }
+
       setDialogOpen(false);
       resetForm();
-      fetchCategories();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure? This will fail if the category has items.')) return;
+
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API}/categories/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Category deleted successfully');
-      fetchCategories();
+
+      if (isOnline) {
+        await axios.delete(`${API}/categories/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Category deleted successfully');
+      } else {
+        await deleteOffline('categories', id, true);
+        toast.success('Category deleted offline, will sync when online');
+      }
+
+      setCategories(categories.filter(c => c.id !== id));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Delete failed');
     }
@@ -88,7 +132,25 @@ const Categories = () => {
     <div className="p-8 md:p-12" data-testid="categories-container">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-[#022c22] mb-2" data-testid="categories-title">Categories</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-serif font-bold text-[#022c22]" data-testid="categories-title">Categories</h1>
+            {isOnline ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+                <WifiOff size={12} />
+                <span>Offline</span>
+              </div>
+            )}
+            {pendingChanges > 0 && (
+              <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                {pendingChanges} pending sync
+              </div>
+            )}
+          </div>
           <p className="text-stone-500">Organize your jewellery items</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -131,10 +193,11 @@ const Categories = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   data-testid="save-category-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b]"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingCategory ? 'Update' : 'Create'}
+                  {isSubmitting ? 'Saving...' : (editingCategory ? 'Update' : 'Create')}
                 </Button>
                 <Button
                   type="button"

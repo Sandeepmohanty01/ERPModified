@@ -24,12 +24,12 @@ const Sidebar = ({ user, onLogout }) => {
   ];
 
   const otherMenuItems = [
-    { path: '/categories', icon: Tag, label: 'Categories' },
-    { path: '/transactions', icon: ShoppingCart, label: 'Transactions' },
-    { path: '/invoices', icon: Receipt, label: 'Invoices' },
-    { path: '/customers', icon: UserPlus, label: 'Customers' },
-    { path: '/sellers', icon: UserCircle, label: 'Sellers' },
-    { path: '/accounts', icon: DollarSign, label: 'Accounts' },
+    // { path: '/categories', icon: Tag, label: 'Categories' },
+    // { path: '/transactions', icon: ShoppingCart, label: 'Transactions' },
+    // { path: '/invoices', icon: Receipt, label: 'Invoices' },
+    // { path: '/customers', icon: UserPlus, label: 'Customers' },
+    // { path: '/sellers', icon: UserCircle, label: 'Sellers' },
+    // { path: '/accounts', icon: DollarSign, label: 'Accounts' },
     { path: '/users', icon: Users, label: 'Users' },
     { path: '/roles', icon: Shield, label: 'Roles' },
   ];

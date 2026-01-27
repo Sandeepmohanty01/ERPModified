@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Plus } from 'lucide-react';
+import { Plus, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -17,7 +18,12 @@ const Transactions = () => {
   const [items, setItems] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline } = useOfflineSync();
+
   const [formData, setFormData] = useState({
     transaction_type: 'sale',
     item_id: '',
@@ -73,6 +79,8 @@ const Transactions = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       const token = localStorage.getItem('token');
       const payload = {
@@ -82,15 +90,30 @@ const Transactions = () => {
         seller_id: formData.seller_id || null,
       };
 
-      await axios.post(`${API}/transactions`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Transaction created successfully');
+      const newTransaction = {
+        ...payload,
+        id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        created_at: new Date().toISOString()
+      };
+
+      if (isOnline) {
+        const response = await axios.post(`${API}/transactions`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Transaction created successfully');
+        setTransactions([response.data, ...transactions]);
+      } else {
+        await saveOffline('transactions', newTransaction, true);
+        toast.success('Transaction saved offline, will sync when online');
+        setTransactions([newTransaction, ...transactions]);
+      }
+
       setDialogOpen(false);
       resetForm();
-      fetchTransactions();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -120,7 +143,25 @@ const Transactions = () => {
     <div className="p-8 md:p-12" data-testid="transactions-container">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-[#022c22] mb-2" data-testid="transactions-title">Transactions</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-serif font-bold text-[#022c22]" data-testid="transactions-title">Transactions</h1>
+            {isOnline ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+                <WifiOff size={12} />
+                <span>Offline</span>
+              </div>
+            )}
+            {pendingChanges > 0 && (
+              <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                {pendingChanges} pending sync
+              </div>
+            )}
+          </div>
           <p className="text-stone-500">Track sales, issues, and returns</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -224,10 +265,11 @@ const Transactions = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   data-testid="save-transaction-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b]"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create
+                  {isSubmitting ? 'Saving...' : 'Create'}
                 </Button>
                 <Button
                   type="button"
@@ -266,13 +308,12 @@ const Transactions = () => {
                     <td className="py-3 px-4">{new Date(txn.created_at).toLocaleString()}</td>
                     <td className="py-3 px-4">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider ${
-                          txn.transaction_type === 'sale'
+                        className={`px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider ${txn.transaction_type === 'sale'
                             ? 'bg-emerald-100 text-emerald-800'
                             : txn.transaction_type === 'issue'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}
                       >
                         {txn.transaction_type}
                       </span>

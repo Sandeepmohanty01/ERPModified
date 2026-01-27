@@ -88,6 +88,16 @@ async def delete_category(category_id: str, current_user: dict = Depends(get_cur
 
 @router.post("/items", response_model=JewelleryItem)
 async def create_item(item_data: JewelleryItemCreate, current_user: dict = Depends(get_current_user)):
+    # Check for duplicate design code
+    existing_design = await db.items.find_one({"design_code": item_data.design_code}, {"_id": 0})
+    if existing_design:
+        raise HTTPException(status_code=400, detail=f"Item with design code '{item_data.design_code}' already exists")
+    
+    # Check for duplicate name (case-insensitive)
+    existing_name = await db.items.find_one({"name": {"$regex": f"^{item_data.name}$", "$options": "i"}}, {"_id": 0})
+    if existing_name:
+        raise HTTPException(status_code=400, detail=f"Item with name '{item_data.name}' already exists")
+    
     category = await db.categories.find_one({"id": item_data.category_id}, {"_id": 0})
     if not category:
         raise HTTPException(status_code=400, detail="Category not found")
@@ -191,6 +201,24 @@ async def update_item(item_id: str, item_data: JewelleryItemCreate, current_user
     existing = await db.items.find_one({"id": item_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Check for duplicate design code (excluding current item)
+    if item_data.design_code != existing.get("design_code"):
+        existing_design = await db.items.find_one(
+            {"design_code": item_data.design_code, "id": {"$ne": item_id}}, 
+            {"_id": 0}
+        )
+        if existing_design:
+            raise HTTPException(status_code=400, detail=f"Item with design code '{item_data.design_code}' already exists")
+    
+    # Check for duplicate name (case-insensitive, excluding current item)
+    if item_data.name.lower() != existing.get("name", "").lower():
+        existing_name = await db.items.find_one(
+            {"name": {"$regex": f"^{item_data.name}$", "$options": "i"}, "id": {"$ne": item_id}}, 
+            {"_id": 0}
+        )
+        if existing_name:
+            raise HTTPException(status_code=400, detail=f"Item with name '{item_data.name}' already exists")
     
     if item_data.category_id != existing["category_id"]:
         category = await db.categories.find_one({"id": item_data.category_id}, {"_id": 0})

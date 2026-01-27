@@ -124,7 +124,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      {stats?.recent_transactions && stats.recent_transactions.length > 0 && (
+      {/* {stats?.recent_transactions && stats.recent_transactions.length > 0 && (
         <div className="bg-white rounded-lg border border-stone-100 shadow-sm p-6">
           <div className="flex items-center gap-2 mb-4">
             <ShoppingCart size={20} />
@@ -165,7 +165,7 @@ const Dashboard = () => {
             </table>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 };

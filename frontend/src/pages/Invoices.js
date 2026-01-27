@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, FileText, Trash2, Eye } from 'lucide-react';
+import { Plus, FileText, Trash2, Eye, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -18,8 +19,13 @@ const Invoices = () => {
   const [customers, setCustomers] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline, deleteOffline } = useOfflineSync();
+
   const [formData, setFormData] = useState({
     customer_id: '',
     items: [],
@@ -119,6 +125,8 @@ const Invoices = () => {
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
       const token = localStorage.getItem('token');
       const payload = {
@@ -130,27 +138,52 @@ const Invoices = () => {
         igst_rate: parseFloat(formData.igst_rate),
       };
 
-      await axios.post(`${API}/invoices`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Invoice created successfully');
+      const newInvoice = {
+        ...payload,
+        id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        invoice_number: `INV-TEMP-${Date.now()}`,
+        invoice_date: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      if (isOnline) {
+        const response = await axios.post(`${API}/invoices`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Invoice created successfully');
+        setInvoices([response.data, ...invoices]);
+      } else {
+        await saveOffline('invoices', newInvoice, true);
+        toast.success('Invoice saved offline, will sync when online');
+        setInvoices([newInvoice, ...invoices]);
+      }
+
       setDialogOpen(false);
       resetForm();
-      fetchInvoices();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this invoice?')) return;
+
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`${API}/invoices/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Invoice deleted successfully');
-      fetchInvoices();
+
+      if (isOnline) {
+        await axios.delete(`${API}/invoices/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('Invoice deleted successfully');
+      } else {
+        await deleteOffline('invoices', id, true);
+        toast.success('Invoice deleted offline, will sync when online');
+      }
+
+      setInvoices(invoices.filter(inv => inv.id !== id));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Delete failed');
     }
@@ -158,7 +191,7 @@ const Invoices = () => {
 
   const generatePDF = async (invoice) => {
     const doc = new jsPDF();
-    
+
     // Fetch payment details if partial/pending
     let totalPaid = 0;
     if (invoice.payment_status === 'partial' || invoice.payment_status === 'pending') {
@@ -172,7 +205,7 @@ const Invoices = () => {
         console.error('Failed to fetch payment details');
       }
     }
-    
+
     const remainingAmount = invoice.total_amount - totalPaid;
 
     // Header
@@ -255,17 +288,17 @@ const Invoices = () => {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.text('Payment Status:', 14, currentY);
-    
+
     currentY += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    
-    const statusColor = invoice.payment_status === 'paid' ? [34, 197, 94] : 
-                       invoice.payment_status === 'partial' ? [251, 146, 60] : 
-                       [239, 68, 68];
+
+    const statusColor = invoice.payment_status === 'paid' ? [34, 197, 94] :
+      invoice.payment_status === 'partial' ? [251, 146, 60] :
+        [239, 68, 68];
     doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
     doc.text('Status: ' + invoice.payment_status.toUpperCase(), 14, currentY);
-    
+
     // Show payment details based on status
     if (invoice.payment_status === 'partial') {
       currentY += 7;
@@ -320,7 +353,25 @@ const Invoices = () => {
     <div className="p-8 md:p-12" data-testid="invoices-container">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-[#022c22] mb-2" data-testid="invoices-title">Invoices</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-serif font-bold text-[#022c22]" data-testid="invoices-title">Invoices</h1>
+            {isOnline ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+                <WifiOff size={12} />
+                <span>Offline</span>
+              </div>
+            )}
+            {pendingChanges > 0 && (
+              <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                {pendingChanges} pending sync
+              </div>
+            )}
+          </div>
           <p className="text-stone-500">Manage sales invoices</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -495,10 +546,11 @@ const Invoices = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   data-testid="save-invoice-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b]"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Invoice
+                  {isSubmitting ? 'Creating...' : 'Create Invoice'}
                 </Button>
                 <Button
                   type="button"
@@ -539,13 +591,12 @@ const Invoices = () => {
                     <td className="py-3 px-4 font-bold">₹{invoice.total_amount.toFixed(2)}</td>
                     <td className="py-3 px-4">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider ${
-                          invoice.payment_status === 'paid'
+                        className={`px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider ${invoice.payment_status === 'paid'
                             ? 'bg-emerald-100 text-emerald-800'
                             : invoice.payment_status === 'partial'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
                       >
                         {invoice.payment_status}
                       </span>

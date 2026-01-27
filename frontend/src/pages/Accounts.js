@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Plus, TrendingUp, TrendingDown, DollarSign, CreditCard } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, DollarSign, CreditCard, Wifi, WifiOff } from 'lucide-react';
+import useOfflineSync from '../hooks/useOfflineSync';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -17,9 +18,14 @@ const Accounts = () => {
   const [expenses, setExpenses] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [invoices, setInvoices] = useState([]);
+
+  // Offline sync hook
+  const { isOnline, pendingChanges, saveOffline } = useOfflineSync();
+
   const [expenseFormData, setExpenseFormData] = useState({
     category: '',
     description: '',
@@ -61,22 +67,40 @@ const Accounts = () => {
 
   const handleExpenseSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmittingExpense(true);
+
     try {
       const token = localStorage.getItem('token');
-      await axios.post(
-        `${API}/expenses`,
-        {
-          ...expenseFormData,
-          amount: parseFloat(expenseFormData.amount),
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success('Expense added successfully');
+      const payload = {
+        ...expenseFormData,
+        amount: parseFloat(expenseFormData.amount),
+      };
+
+      const newExpense = {
+        ...payload,
+        id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        expense_date: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      if (isOnline) {
+        const response = await axios.post(`${API}/expenses`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success('Expense added successfully');
+        setExpenses([response.data, ...expenses]);
+      } else {
+        await saveOffline('expenses', newExpense, true);
+        toast.success('Expense saved offline, will sync when online');
+        setExpenses([newExpense, ...expenses]);
+      }
+
       setExpenseDialogOpen(false);
       resetExpenseForm();
-      fetchData();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operation failed');
+    } finally {
+      setIsSubmittingExpense(false);
     }
   };
 
@@ -132,7 +156,25 @@ const Accounts = () => {
   return (
     <div className="p-8 md:p-12" data-testid="accounts-container">
       <div className="mb-8">
-        <h1 className="text-4xl font-serif font-bold text-[#022c22] mb-2" data-testid="accounts-title">Accounts</h1>
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-4xl font-serif font-bold text-[#022c22]" data-testid="accounts-title">Accounts</h1>
+          {isOnline ? (
+            <div className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+              <Wifi size={12} />
+              <span>Online</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs">
+              <WifiOff size={12} />
+              <span>Offline</span>
+            </div>
+          )}
+          {pendingChanges > 0 && (
+            <div className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+              {pendingChanges} pending sync
+            </div>
+          )}
+        </div>
         <p className="text-stone-500">Financial overview and management</p>
       </div>
 
@@ -167,9 +209,8 @@ const Accounts = () => {
           </div>
           <p className="text-sm text-stone-500 mb-1">Net Profit</p>
           <p
-            className={`text-3xl font-serif font-bold ${
-              summary?.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'
-            }`}
+            className={`text-3xl font-serif font-bold ${summary?.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              }`}
           >
             ₹{summary?.profit?.toFixed(2) || 0}
           </p>
@@ -360,10 +401,11 @@ const Accounts = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   type="submit"
+                  disabled={isSubmittingExpense}
                   data-testid="save-expense-button"
-                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b]"
+                  className="rounded-sm font-medium tracking-wide transition-all duration-300 bg-[#022c22] text-[#d4af37] hover:bg-[#064e3b] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Add
+                  {isSubmittingExpense ? 'Saving...' : 'Add'}
                 </Button>
                 <Button
                   type="button"
