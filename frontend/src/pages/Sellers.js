@@ -138,8 +138,12 @@ const Sellers = () => {
                 <Label htmlFor="contact">Contact Number</Label>
                 <Input
                   id="contact"
+                  type="tel"
                   value={formData.contact}
                   onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+                  pattern="[0-9\s\-\+\(\)]+"
+                  title="Contact number must contain only digits, spaces, hyphens, parentheses, or plus sign"
+                  minLength={10}
                   required
                   data-testid="seller-contact-input"
                 />

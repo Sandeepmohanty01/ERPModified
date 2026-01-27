@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
 import uuid
+import re
 
 # ========== USER & AUTH MODELS ==========
 
@@ -214,6 +215,17 @@ class SellerCreate(BaseModel):
     contact: str
     email: Optional[EmailStr] = None
     address: Optional[str] = None
+    
+    @field_validator('contact')
+    @classmethod
+    def validate_contact(cls, v):
+        if not re.match(r'^[0-9\s\-\+\(\)]+$', v):
+            raise ValueError('Contact number must contain only digits, spaces, hyphens, parentheses, or plus sign')
+        # Remove all non-digit characters to check if there are enough digits
+        digits_only = re.sub(r'[^0-9]', '', v)
+        if len(digits_only) < 10:
+            raise ValueError('Contact number must contain at least 10 digits')
+        return v
 
 # ========== TRANSACTION MODELS ==========
 
@@ -255,6 +267,17 @@ class CustomerCreate(BaseModel):
     email: Optional[EmailStr] = None
     address: Optional[str] = None
     gstin: Optional[str] = None
+    
+    @field_validator('contact')
+    @classmethod
+    def validate_contact(cls, v):
+        if not re.match(r'^[0-9\s\-\+\(\)]+$', v):
+            raise ValueError('Contact number must contain only digits, spaces, hyphens, parentheses, or plus sign')
+        # Remove all non-digit characters to check if there are enough digits
+        digits_only = re.sub(r'[^0-9]', '', v)
+        if len(digits_only) < 10:
+            raise ValueError('Contact number must contain at least 10 digits')
+        return v
 
 # ========== INVOICE MODELS ==========
 
