@@ -6,7 +6,7 @@ import qrcode
 from io import BytesIO
 import base64
 from backend.shared.database import get_database
-from backend.shared.auth import get_current_user
+from backend.shared.auth import get_current_user, require_permission
 from backend.shared.models import Category, CategoryCreate, JewelleryItem, JewelleryItemCreate
 
 router = APIRouter(prefix="/api", tags=["Inventory"])
@@ -35,7 +35,7 @@ def generate_qr_code(design_code: str, item_id: str) -> str:
 # ========== CATEGORY ROUTES ==========
 
 @router.post("/categories", response_model=Category)
-async def create_category(category_data: CategoryCreate, current_user: dict = Depends(get_current_user)):
+async def create_category(category_data: CategoryCreate, current_user: dict = Depends(require_permission("inventory.create"))):
     category = Category(**category_data.model_dump())
     category_dict = category.model_dump()
     category_dict["created_at"] = category_dict["created_at"].isoformat()
@@ -43,7 +43,7 @@ async def create_category(category_data: CategoryCreate, current_user: dict = De
     return category
 
 @router.get("/categories", response_model=List[Category])
-async def get_categories(current_user: dict = Depends(get_current_user)):
+async def get_categories(current_user: dict = Depends(require_permission("inventory.view"))):
     categories = await db.categories.find({}, {"_id": 0}).to_list(1000)
     for cat in categories:
         if isinstance(cat["created_at"], str):
@@ -51,7 +51,7 @@ async def get_categories(current_user: dict = Depends(get_current_user)):
     return categories
 
 @router.get("/categories/{category_id}", response_model=Category)
-async def get_category(category_id: str, current_user: dict = Depends(get_current_user)):
+async def get_category(category_id: str, current_user: dict = Depends(require_permission("inventory.view"))):
     category = await db.categories.find_one({"id": category_id}, {"_id": 0})
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -60,7 +60,7 @@ async def get_category(category_id: str, current_user: dict = Depends(get_curren
     return category
 
 @router.put("/categories/{category_id}", response_model=Category)
-async def update_category(category_id: str, category_data: CategoryCreate, current_user: dict = Depends(get_current_user)):
+async def update_category(category_id: str, category_data: CategoryCreate, current_user: dict = Depends(require_permission("inventory.update"))):
     existing = await db.categories.find_one({"id": category_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -74,7 +74,7 @@ async def update_category(category_id: str, category_data: CategoryCreate, curre
     return updated
 
 @router.delete("/categories/{category_id}")
-async def delete_category(category_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_category(category_id: str, current_user: dict = Depends(require_permission("inventory.delete"))):
     items_count = await db.items.count_documents({"category_id": category_id})
     if items_count > 0:
         raise HTTPException(status_code=400, detail=f"Cannot delete category with {items_count} items")
@@ -87,7 +87,7 @@ async def delete_category(category_id: str, current_user: dict = Depends(get_cur
 # ========== INVENTORY/ITEMS ROUTES ==========
 
 @router.post("/items", response_model=JewelleryItem)
-async def create_item(item_data: JewelleryItemCreate, current_user: dict = Depends(get_current_user)):
+async def create_item(item_data: JewelleryItemCreate, current_user: dict = Depends(require_permission("inventory.create"))):
     # Check for duplicate design code
     existing_design = await db.items.find_one({"design_code": item_data.design_code}, {"_id": 0})
     if existing_design:
@@ -180,7 +180,7 @@ async def create_stock_ledger_entry(item, transaction_type, reference_type, quan
     return ledger_entry
 
 @router.get("/items", response_model=List[JewelleryItem])
-async def get_items(current_user: dict = Depends(get_current_user)):
+async def get_items(current_user: dict = Depends(require_permission("inventory.view"))):
     items = await db.items.find({}, {"_id": 0}).to_list(1000)
     for item in items:
         if isinstance(item["created_at"], str):
@@ -188,7 +188,7 @@ async def get_items(current_user: dict = Depends(get_current_user)):
     return items
 
 @router.get("/items/{item_id}", response_model=JewelleryItem)
-async def get_item(item_id: str, current_user: dict = Depends(get_current_user)):
+async def get_item(item_id: str, current_user: dict = Depends(require_permission("inventory.view"))):
     item = await db.items.find_one({"id": item_id}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -197,7 +197,7 @@ async def get_item(item_id: str, current_user: dict = Depends(get_current_user))
     return item
 
 @router.put("/items/{item_id}", response_model=JewelleryItem)
-async def update_item(item_id: str, item_data: JewelleryItemCreate, current_user: dict = Depends(get_current_user)):
+async def update_item(item_id: str, item_data: JewelleryItemCreate, current_user: dict = Depends(require_permission("inventory.update"))):
     existing = await db.items.find_one({"id": item_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -234,7 +234,7 @@ async def update_item(item_id: str, item_data: JewelleryItemCreate, current_user
     return updated
 
 @router.delete("/items/{item_id}")
-async def delete_item(item_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_item(item_id: str, current_user: dict = Depends(require_permission("inventory.delete"))):
     result = await db.items.delete_one({"id": item_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")

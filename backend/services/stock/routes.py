@@ -3,7 +3,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 import uuid
 from backend.shared.database import get_database
-from backend.shared.auth import get_current_user
+from backend.shared.auth import get_current_user, require_permission
 from backend.shared.models import (
     StockLedgerEntry, StockLedgerCreate,
     StockAdjustment, StockAdjustmentCreate, StockAdjustmentItem,
@@ -25,7 +25,7 @@ async def get_stock_ledger(
     end_date: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_ledger.view"))
 ):
     """Get stock ledger entries with filtering"""
     query = {}
@@ -215,7 +215,7 @@ async def get_stock_movement_report(
 @router.post("/adjustments")
 async def create_stock_adjustment(
     adjustment_data: StockAdjustmentCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_adjustment.create"))
 ):
     """Create a new stock adjustment"""
     # Generate adjustment number
@@ -266,7 +266,7 @@ async def get_stock_adjustments(
     reason: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_adjustment.view"))
 ):
     """Get all stock adjustments"""
     query = {}
@@ -303,7 +303,7 @@ async def get_stock_adjustment(
 @router.put("/adjustments/{adjustment_id}/approve")
 async def approve_stock_adjustment(
     adjustment_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_adjustment.approve"))
 ):
     """Approve and apply a stock adjustment"""
     adjustment = await db.stock_adjustments.find_one({"id": adjustment_id}, {"_id": 0})
@@ -368,7 +368,7 @@ async def approve_stock_adjustment(
 @router.put("/adjustments/{adjustment_id}/reject")
 async def reject_stock_adjustment(
     adjustment_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_adjustment.approve"))
 ):
     """Reject a stock adjustment"""
     adjustment = await db.stock_adjustments.find_one({"id": adjustment_id}, {"_id": 0})
@@ -390,7 +390,7 @@ async def reject_stock_adjustment(
 @router.post("/reconciliation")
 async def create_stock_reconciliation(
     reconciliation_data: StockReconciliationCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_adjustment.create"))
 ):
     """Create a new stock reconciliation"""
     count = await db.stock_reconciliations.count_documents({})
@@ -484,7 +484,7 @@ async def get_stock_reconciliation(
 @router.put("/reconciliation/{reconciliation_id}/complete")
 async def complete_stock_reconciliation(
     reconciliation_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_permission("stock_adjustment.approve"))
 ):
     """Complete reconciliation and create adjustments for discrepancies"""
     reconciliation = await db.stock_reconciliations.find_one({"id": reconciliation_id}, {"_id": 0})

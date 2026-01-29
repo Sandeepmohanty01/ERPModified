@@ -43,8 +43,52 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
+        
+        # Load role and permissions
+        role = await db.roles.find_one({"id": user["role_id"]}, {"_id": 0})
+        user["permissions"] = role.get("permissions", {}) if role else {}
+        user["role_name"] = role.get("name", "Unknown") if role else "Unknown"
+        
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+def check_permission(user_permissions: dict, required_permission: str) -> bool:
+    """Check if user has a specific permission.
+    
+    Args:
+        user_permissions: User's permissions dict (e.g., {"inventory": {"create": True}})
+        required_permission: Required permission in dot notation (e.g., "inventory.create")
+    
+    Returns:
+        True if user has permission, False otherwise
+    """
+    parts = required_permission.split(".")
+    current = user_permissions
+    
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    
+    return current is True
+
+def require_permission(permission: str):
+    """Dependency to check if current user has required permission.
+    
+    Args:
+        permission: Required permission in dot notation (e.g., "inventory.create")
+    
+    Returns:
+        Dependency function that raises 403 if permission denied
+    """
+    async def permission_checker(current_user: dict = Depends(get_current_user)):
+        if not check_permission(current_user.get("permissions", {}), permission):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission denied. Only admin can perform this action. Your role is: {current_user.get('role_name', 'Unknown')}"
+            )
+        return current_user
+    return permission_checker
