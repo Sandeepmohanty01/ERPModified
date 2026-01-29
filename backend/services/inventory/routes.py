@@ -235,7 +235,12 @@ async def update_item(item_id: str, item_data: JewelleryItemCreate, current_user
 
 @router.delete("/items/{item_id}")
 async def delete_item(item_id: str, current_user: dict = Depends(require_permission("inventory.delete"))):
+    # Delete the item
     result = await db.items.delete_one({"id": item_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Delete all stock ledger entries for this item
+    await db.stock_ledger.delete_many({"item_id": item_id})
+    
     return {"message": "Item deleted successfully"}
