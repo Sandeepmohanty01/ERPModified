@@ -11,7 +11,7 @@ db = get_database()
 # ========== ROLE ROUTES ==========
 
 @router.post("/roles", response_model=Role)
-async def create_role(role_data: RoleCreate, current_user: dict = Depends(require_permission("users.manage"))):
+async def create_role(role_data: RoleCreate, current_user: dict = Depends(require_permission("roles.create"))):
     role = Role(**role_data.model_dump())
     role_dict = role.model_dump()
     role_dict["created_at"] = role_dict["created_at"].isoformat()
@@ -36,7 +36,7 @@ async def get_role(role_id: str, current_user: dict = Depends(require_permission
     return role
 
 @router.put("/roles/{role_id}", response_model=Role)
-async def update_role(role_id: str, role_data: RoleCreate, current_user: dict = Depends(require_permission("users.manage"))):
+async def update_role(role_id: str, role_data: RoleCreate, current_user: dict = Depends(require_permission("roles.edit"))):
     existing_role = await db.roles.find_one({"id": role_id}, {"_id": 0})
     if not existing_role:
         raise HTTPException(status_code=404, detail="Role not found")
@@ -50,7 +50,7 @@ async def update_role(role_id: str, role_data: RoleCreate, current_user: dict = 
     return updated_role
 
 @router.delete("/roles/{role_id}")
-async def delete_role(role_id: str, current_user: dict = Depends(require_permission("users.manage"))):
+async def delete_role(role_id: str, current_user: dict = Depends(require_permission("roles.delete"))):
     result = await db.roles.delete_one({"id": role_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Role not found")
@@ -72,7 +72,7 @@ async def get_user(user_id: str, current_user: dict = Depends(require_permission
 
 @router.put("/users/{user_id}")
 async def update_user(user_id: str, name: Optional[str] = None, role_id: Optional[str] = None, 
-                     is_active: Optional[bool] = None, current_user: dict = Depends(require_permission("users.manage"))):
+                     is_active: Optional[bool] = None, current_user: dict = Depends(require_permission("users.edit"))):
     update_data = {}
     if name is not None:
         update_data["name"] = name
@@ -91,7 +91,7 @@ async def update_user(user_id: str, name: Optional[str] = None, role_id: Optiona
     return user
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, current_user: dict = Depends(require_permission("users.manage"))):
+async def delete_user(user_id: str, current_user: dict = Depends(require_permission("users.delete"))):
     if user_id == current_user["id"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     result = await db.users.delete_one({"id": user_id})
